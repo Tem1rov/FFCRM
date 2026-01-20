@@ -40,3 +40,7 @@ coverage/
 # Temp files
 *.tmp
 *.temp
+
+terraform/terraform.tfvars
+terraform/.terraform/
+terraform/*.tfstate*
