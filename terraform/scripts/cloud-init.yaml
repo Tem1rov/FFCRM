@@ -1,0 +1,192 @@
+#cloud-config
+# ==========================================
+# FulfillmentFinance CRM - Cloud-Init Script
+# ==========================================
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - git
+  - nginx
+  - certbot
+  - python3-certbot-nginx
+  - ufw
+
+write_files:
+  # Docker Compose environment file
+  - path: /var/www/crm/.env
+    permissions: '0600'
+    content: |
+      # ========================================
+      # FulfillmentFinance CRM - Production
+      # ========================================
+      
+      # Database
+      DB_USER=fulfillment
+      DB_PASSWORD=${db_password}
+      DB_NAME=fulfillment_crm
+      POSTGRES_USER=fulfillment
+      POSTGRES_PASSWORD=${db_password}
+      POSTGRES_DB=fulfillment_crm
+      
+      # Prisma
+      DATABASE_URL=postgresql://fulfillment:${db_password}@postgres:5432/fulfillment_crm?schema=public
+      
+      # Backend
+      NODE_ENV=production
+      PORT=4000
+      JWT_SECRET=${jwt_secret}
+      JWT_EXPIRES_IN=7d
+      
+      # Frontend
+      VITE_API_URL=${domain != "" ? "https://${domain}/api" : "/api"}
+
+  # Nginx configuration
+  - path: /etc/nginx/sites-available/crm
+    permissions: '0644'
+    content: |
+      server {
+          listen 80;
+          server_name ${domain != "" ? domain : "_"};
+          
+          location /.well-known/acme-challenge/ {
+              root /var/www/certbot;
+          }
+          
+          location /api {
+              proxy_pass http://localhost:4000;
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade $http_upgrade;
+              proxy_set_header Connection 'upgrade';
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+              proxy_cache_bypass $http_upgrade;
+              proxy_read_timeout 300s;
+          }
+          
+          location / {
+              proxy_pass http://localhost:3000;
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade $http_upgrade;
+              proxy_set_header Connection 'upgrade';
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+              proxy_cache_bypass $http_upgrade;
+          }
+      }
+
+  # Setup script
+  - path: /root/setup-crm.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -e
+      
+      echo "=========================================="
+      echo "FulfillmentFinance CRM - Setup Script"
+      echo "=========================================="
+      
+      # Install Docker
+      echo ">>> Installing Docker..."
+      curl -fsSL https://get.docker.com -o get-docker.sh
+      sh get-docker.sh
+      rm get-docker.sh
+      
+      # Install Docker Compose
+      echo ">>> Installing Docker Compose..."
+      apt-get install -y docker-compose-plugin
+      
+      # Clone repository
+      echo ">>> Cloning repository..."
+      mkdir -p /var/www
+      cd /var/www
+      
+      if [ -n "${git_repo_url}" ]; then
+        git clone -b ${git_branch} ${git_repo_url} crm
+      else
+        echo "Git repo URL not provided. Please clone manually."
+        mkdir -p crm
+      fi
+      
+      # Move .env file
+      if [ -f /var/www/crm/.env.example ]; then
+        mv /var/www/crm/.env /var/www/crm/.env.production
+        cp /var/www/crm/.env.production /var/www/crm/.env
+      fi
+      
+      # Configure firewall
+      echo ">>> Configuring firewall..."
+      ufw allow 22/tcp
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      ufw --force enable
+      
+      # Configure Nginx
+      echo ">>> Configuring Nginx..."
+      rm -f /etc/nginx/sites-enabled/default
+      ln -sf /etc/nginx/sites-available/crm /etc/nginx/sites-enabled/
+      nginx -t && systemctl restart nginx
+      
+      # Create certbot directory
+      mkdir -p /var/www/certbot
+      
+      # Start application
+      if [ -f /var/www/crm/docker-compose.yml ]; then
+        echo ">>> Starting application with Docker Compose..."
+        cd /var/www/crm
+        docker compose up -d --build
+        
+        echo ">>> Waiting for services to start..."
+        sleep 30
+        
+        # Check health
+        if curl -s http://localhost:4000/health | grep -q "ok"; then
+          echo "✅ Backend is healthy!"
+        else
+          echo "⚠️ Backend health check failed. Check logs with: docker compose logs backend"
+        fi
+      else
+        echo "⚠️ docker-compose.yml not found. Please deploy manually."
+      fi
+      
+      # SSL Certificate (if domain is provided)
+      if [ -n "${domain}" ] && [ -n "${admin_email}" ]; then
+        echo ">>> Obtaining SSL certificate..."
+        certbot --nginx -d ${domain} --non-interactive --agree-tos -m ${admin_email}
+        
+        # Setup auto-renewal
+        echo "0 12 * * * /usr/bin/certbot renew --quiet" | crontab -
+      fi
+      
+      echo ""
+      echo "=========================================="
+      echo "✅ Setup Complete!"
+      echo "=========================================="
+      echo ""
+      echo "Application URL: ${domain != "" ? "https://${domain}" : "http://$(curl -s ifconfig.me)"}"
+      echo ""
+      echo "Default credentials:"
+      echo "  Email: admin@fulfillment.local"
+      echo "  Password: admin123"
+      echo ""
+      echo "Commands:"
+      echo "  View logs: cd /var/www/crm && docker compose logs -f"
+      echo "  Restart:   cd /var/www/crm && docker compose restart"
+      echo "  Stop:      cd /var/www/crm && docker compose down"
+      echo ""
+
+runcmd:
+  # Run setup script
+  - /root/setup-crm.sh > /var/log/crm-setup.log 2>&1
+
+final_message: "FulfillmentFinance CRM setup completed after $UPTIME seconds"

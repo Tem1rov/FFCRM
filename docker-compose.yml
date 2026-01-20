@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: fulfillment_db
+    environment:
+      POSTGRES_USER: ${DB_USER:-fulfillment}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-fulfillment_secret}
+      POSTGRES_DB: ${DB_NAME:-fulfillment_crm}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - fulfillment_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-fulfillment}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fulfillment_backend
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://${DB_USER:-fulfillment}:${DB_PASSWORD:-fulfillment_secret}@postgres:5432/${DB_NAME:-fulfillment_crm}
+      JWT_SECRET: ${JWT_SECRET:-your_super_secret_jwt_key_change_in_production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fulfillment_network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000/api}
+    container_name: fulfillment_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - fulfillment_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  fulfillment_network:
+    driver: bridge

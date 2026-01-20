@@ -1,0 +1,237 @@
+// SQLite schema for local development without Docker
+// Copy this file to schema.prisma for local development
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ==================== ПОЛЬЗОВАТЕЛИ И РОЛИ ====================
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      String   @default("MANAGER")
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+
+  @@map("users")
+}
+
+// ==================== ПОСТАВЩИКИ И УСЛУГИ ====================
+model Vendor {
+  id           String   @id @default(cuid())
+  name         String
+  legalName    String?
+  inn          String?
+  kpp          String?
+  address      String?
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  status       String   @default("ACTIVE")
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  services       VendorService[]
+  costOperations CostOperation[]
+
+  @@map("vendors")
+}
+
+model VendorService {
+  id          String    @id @default(cuid())
+  vendorId    String
+  name        String
+  type        String
+  unit        String
+  price       Decimal
+  currency    String    @default("RUB")
+  minQuantity Decimal?
+  maxQuantity Decimal?
+  validFrom   DateTime  @default(now())
+  validTo     DateTime?
+  isActive    Boolean   @default(true)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  vendor         Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  costOperations CostOperation[]
+  priceHistory   PriceHistory[]
+
+  @@map("vendor_services")
+}
+
+model PriceHistory {
+  id              String   @id @default(cuid())
+  vendorServiceId String
+  oldPrice        Decimal
+  newPrice        Decimal
+  changedAt       DateTime @default(now())
+  changedBy       String?
+
+  vendorService VendorService @relation(fields: [vendorServiceId], references: [id], onDelete: Cascade)
+
+  @@map("price_history")
+}
+
+// ==================== КЛИЕНТЫ ====================
+model Client {
+  id           String   @id @default(cuid())
+  name         String
+  companyName  String?
+  inn          String?
+  email        String?
+  phone        String?
+  address      String?
+  tariffRate   Decimal?
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders           Order[]
+  incomeOperations IncomeOperation[]
+
+  @@map("clients")
+}
+
+// ==================== ЗАКАЗЫ ====================
+model Order {
+  id              String   @id @default(cuid())
+  orderNumber     String   @unique
+  clientId        String
+  managerId       String?
+  status          String   @default("NEW")
+  shippingAddress String?
+  estimatedCost   Decimal  @default(0)
+  actualCost      Decimal  @default(0)
+  totalIncome     Decimal  @default(0)
+  profit          Decimal  @default(0)
+  marginPercent   Decimal  @default(0)
+  orderDate       DateTime @default(now())
+  shippedDate     DateTime?
+  deliveredDate   DateTime?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  client           Client            @relation(fields: [clientId], references: [id])
+  manager          User?             @relation(fields: [managerId], references: [id])
+  items            OrderItem[]
+  costOperations   CostOperation[]
+  incomeOperations IncomeOperation[]
+
+  @@index([orderNumber])
+  @@index([clientId])
+  @@index([status])
+  @@index([orderDate])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  sku       String
+  name      String
+  quantity  Int
+  weight    Decimal @default(0)
+  volume    Decimal @default(0)
+  unitCost  Decimal @default(0)
+  unitPrice Decimal @default(0)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+// ==================== ФИНАНСОВЫЕ ОПЕРАЦИИ ====================
+model CostOperation {
+  id               String   @id @default(cuid())
+  orderId          String
+  vendorId         String
+  vendorServiceId  String
+  operationType    String   @default("CHARGE")
+  quantity         Decimal
+  unitPrice        Decimal
+  calculatedAmount Decimal
+  actualAmount     Decimal
+  description      String?
+  operationDate    DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  order         Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendor        Vendor           @relation(fields: [vendorId], references: [id])
+  vendorService VendorService    @relation(fields: [vendorServiceId], references: [id])
+  transactions  FinTransaction[]
+
+  @@map("cost_operations")
+}
+
+model IncomeOperation {
+  id            String    @id @default(cuid())
+  orderId       String
+  clientId      String
+  invoiceAmount Decimal
+  paidAmount    Decimal   @default(0)
+  paymentMethod String?
+  paymentDate   DateTime?
+  description   String?
+  createdAt     DateTime  @default(now())
+
+  order        Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  client       Client           @relation(fields: [clientId], references: [id])
+  transactions FinTransaction[]
+
+  @@map("income_operations")
+}
+
+// ==================== БУХГАЛТЕРСКИЙ УЧЕТ ====================
+model Account {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  type        String
+  balance     Decimal  @default(0)
+  currency    String   @default("RUB")
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  debitTransactions  FinTransaction[] @relation("DebitAccount")
+  creditTransactions FinTransaction[] @relation("CreditAccount")
+
+  @@map("accounts")
+}
+
+model FinTransaction {
+  id                String   @id @default(cuid())
+  debitAccountId    String
+  creditAccountId   String
+  amount            Decimal
+  costOperationId   String?
+  incomeOperationId String?
+  description       String?
+  transactionDate   DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  debitAccount    Account          @relation("DebitAccount", fields: [debitAccountId], references: [id])
+  creditAccount   Account          @relation("CreditAccount", fields: [creditAccountId], references: [id])
+  costOperation   CostOperation?   @relation(fields: [costOperationId], references: [id])
+  incomeOperation IncomeOperation? @relation(fields: [incomeOperationId], references: [id])
+
+  @@map("fin_transactions")
+}

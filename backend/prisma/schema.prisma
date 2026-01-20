@@ -1,0 +1,571 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ==================== РџРћР›Р¬Р—РћР’РђРўР•Р›Р Р Р РћР›Р ====================
+// UserRole: ADMIN, MANAGER, ANALYST
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      String   @default("MANAGER") // ADMIN, MANAGER, ANALYST, WAREHOUSE
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders         Order[]
+  warehouseTasks WarehouseTask[] @relation("AssignedUser")
+
+  @@map("users")
+}
+
+// ==================== РџРћРЎРўРђР’Р©РРљР Р РЈРЎР›РЈР“Р ====================
+// VendorStatus: ACTIVE, INACTIVE, SUSPENDED
+
+model Vendor {
+  id           String   @id @default(cuid())
+  name         String
+  legalName    String?
+  inn          String?
+  kpp          String?
+  address      String?
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  status       String   @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  services       VendorService[]
+  costOperations CostOperation[]
+  orderExpenses  OrderExpense[]
+
+  @@map("vendors")
+}
+
+// ServiceUnit: PIECE, KG, CUBIC_METER, ORDER, PALLET, DAY, MONTH
+// ServiceType: STORAGE, PICKING, PACKING, SHIPPING, RECEIVING, LABELING, RETURNS, OTHER
+
+model VendorService {
+  id          String    @id @default(cuid())
+  vendorId    String
+  name        String
+  type        String    // STORAGE, PICKING, PACKING, SHIPPING, RECEIVING, LABELING, RETURNS, OTHER
+  unit        String    // PIECE, KG, CUBIC_METER, ORDER, PALLET, DAY, MONTH
+  price       Decimal   
+  currency    String    @default("RUB")
+  minQuantity Decimal?  
+  maxQuantity Decimal?  
+  validFrom   DateTime  @default(now())
+  validTo     DateTime?
+  isActive    Boolean   @default(true)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  vendor               Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  costOperations       CostOperation[]
+  priceHistory         PriceHistory[]
+  orderExpenses        OrderExpense[]
+  expenseTemplateItems ExpenseTemplateItem[]
+
+  @@map("vendor_services")
+}
+
+model PriceHistory {
+  id              String   @id @default(cuid())
+  vendorServiceId String
+  oldPrice        Decimal  
+  newPrice        Decimal  
+  changedAt       DateTime @default(now())
+  changedBy       String?
+
+  vendorService VendorService @relation(fields: [vendorServiceId], references: [id], onDelete: Cascade)
+
+  @@map("price_history")
+}
+
+// ==================== РљР›РР•РќРўР« ====================
+model Client {
+  id           String   @id @default(cuid())
+  name         String
+  companyName  String?
+  inn          String?
+  email        String?
+  phone        String?
+  address      String?
+  tariffRate   Decimal? // РўР°СЂРёС„РЅР°СЏ СЃС‚Р°РІРєР° РєР»РёРµРЅС‚Р° (РјРЅРѕР¶РёС‚РµР»СЊ РёР»Рё С„РёРєСЃ)
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders           Order[]
+  incomeOperations IncomeOperation[]
+
+  @@map("clients")
+}
+
+// ==================== Р—РђРљРђР—Р« ====================
+// OrderStatus: NEW, PROCESSING, PICKING, PACKED, SHIPPED, DELIVERED, COMPLETED, CANCELLED, RETURNED
+
+model Order {
+  id              String   @id @default(cuid())
+  orderNumber     String   @unique
+  clientId        String
+  managerId       String?
+  status          String   @default("NEW") // NEW, PROCESSING, PICKING, PACKED, SHIPPED, DELIVERED, COMPLETED, CANCELLED, RETURNED
+  
+  // РђРґСЂРµСЃР°
+  shippingAddress String?
+  
+  // Р Р°СЃС‡РµС‚РЅС‹Рµ СЃСѓРјРјС‹
+  estimatedCost   Decimal  @default(0) // Р Р°СЃС‡РµС‚РЅР°СЏ СЃРµР±РµСЃС‚РѕРёРјРѕСЃС‚СЊ
+  actualCost      Decimal  @default(0) // Р¤Р°РєС‚РёС‡РµСЃРєР°СЏ СЃРµР±РµСЃС‚РѕРёРјРѕСЃС‚СЊ
+  totalIncome     Decimal  @default(0) // Р’С‹СЂСѓС‡РєР°
+  profit          Decimal  @default(0) // РџСЂРёР±С‹Р»СЊ
+  marginPercent   Decimal  @default(0)  // РњР°СЂР¶РёРЅР°Р»СЊРЅРѕСЃС‚СЊ %
+  
+  // Р”Р°С‚С‹
+  orderDate       DateTime @default(now())
+  shippedDate     DateTime?
+  deliveredDate   DateTime?
+  
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  client           Client            @relation(fields: [clientId], references: [id])
+  manager          User?             @relation(fields: [managerId], references: [id])
+  items            OrderItem[]
+  expenses         OrderExpense[]
+  costOperations   CostOperation[]
+  incomeOperations IncomeOperation[]
+
+  @@index([orderNumber])
+  @@index([clientId])
+  @@index([status])
+  @@index([orderDate])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  sku       String
+  name      String
+  quantity  Int
+  weight    Decimal @default(0) // вес в кг
+  volume    Decimal @default(0) // объем в куб.м
+  unitCost  Decimal @default(0) // себестоимость товара
+  unitPrice Decimal @default(0) // цена продажи
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+// ==================== РАСХОДЫ ЗАКАЗА ====================
+// ExpenseCategory: PACKAGING, LABOR, RENT, LOGISTICS, MATERIALS, OTHER
+// ExpenseStatus: PLANNED, ACTUAL, FIXED
+
+model OrderExpense {
+  id               String    @id @default(cuid())
+  orderId          String
+  
+  // Категория расхода
+  category         String    // PACKAGING, LABOR, RENT, LOGISTICS, MATERIALS, OTHER
+  subcategory      String?   // Подкатегория (пакеты, коробки, доставка курьером и т.д.)
+  
+  // Источник расхода
+  vendorId         String?   // Поставщик (если из базы)
+  vendorServiceId  String?   // Услуга поставщика (если из базы)
+  
+  // Детали расхода
+  description      String    // Название/описание расхода
+  unit             String    @default("PIECE") // Единица измерения
+  quantity         Decimal   @default(1)       // Количество
+  unitPrice        Decimal   @default(0)       // Цена за единицу
+  totalAmount      Decimal   @default(0)       // Итоговая сумма (quantity * unitPrice)
+  
+  // Плановые vs Фактические
+  plannedAmount    Decimal   @default(0)       // Плановая сумма
+  actualAmount     Decimal   @default(0)       // Фактическая сумма
+  
+  // Фиксация цены
+  isPriceLocked    Boolean   @default(false)   // Цена зафиксирована на момент создания
+  priceLockedAt    DateTime?                   // Дата фиксации цены
+  originalPrice    Decimal?                    // Исходная цена поставщика (для отслеживания изменений)
+  
+  // Статус
+  status           String    @default("PLANNED") // PLANNED, ACTUAL, FIXED
+  
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendor        Vendor?        @relation(fields: [vendorId], references: [id])
+  vendorService VendorService? @relation(fields: [vendorServiceId], references: [id])
+
+  @@index([orderId])
+  @@index([category])
+  @@index([vendorId])
+  @@map("order_expenses")
+}
+
+// Шаблоны расходов для автозаполнения
+model ExpenseTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique // Название шаблона (Стандартный заказ, Крупногабаритный и т.д.)
+  description String?
+  
+  // Условия применения
+  productCategory String?  // Категория товаров
+  minWeight       Decimal? // Мин. вес заказа
+  maxWeight       Decimal? // Макс. вес заказа
+  deliveryMethod  String?  // Способ доставки
+  region          String?  // Регион
+  
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items ExpenseTemplateItem[]
+
+  @@map("expense_templates")
+}
+
+// Позиции шаблона расходов
+model ExpenseTemplateItem {
+  id               String  @id @default(cuid())
+  templateId       String
+  
+  category         String   // PACKAGING, LABOR, RENT, LOGISTICS, MATERIALS, OTHER
+  subcategory      String?
+  description      String
+  
+  // Источник (можно указать конкретную услугу или оставить для выбора)
+  vendorServiceId  String?
+  
+  unit             String  @default("PIECE")
+  defaultQuantity  Decimal @default(1)
+  defaultPrice     Decimal @default(0)
+  
+  // Формула расчета количества (опционально)
+  quantityFormula  String? // например: "itemsCount * 2" или "totalWeight / 10"
+  
+  isRequired       Boolean @default(true) // Обязательный расход
+  sortOrder        Int     @default(0)
+
+  template      ExpenseTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  vendorService VendorService?  @relation(fields: [vendorServiceId], references: [id])
+
+  @@map("expense_template_items")
+}
+
+// ==================== Р¤РРќРђРќРЎРћР’Р«Р• РћРџР•Р РђР¦РР ====================
+// OperationType: CHARGE, WRITEOFF
+
+model CostOperation {
+  id               String   @id @default(cuid())
+  orderId          String
+  vendorId         String
+  vendorServiceId  String
+  operationType    String   @default("CHARGE") // CHARGE, WRITEOFF
+  
+  quantity         Decimal  // РљРѕР»-РІРѕ РµРґРёРЅРёС† СѓСЃР»СѓРіРё
+  unitPrice        Decimal  // Р¦РµРЅР° Р·Р° РµРґРёРЅРёС†Сѓ
+  calculatedAmount Decimal  // Р Р°СЃС‡РµС‚РЅР°СЏ СЃСѓРјРјР°
+  actualAmount     Decimal  // Р¤Р°РєС‚РёС‡РµСЃРєР°СЏ СЃСѓРјРјР°
+  
+  description      String?
+  operationDate    DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  order         Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendor        Vendor           @relation(fields: [vendorId], references: [id])
+  vendorService VendorService    @relation(fields: [vendorServiceId], references: [id])
+  transactions  FinTransaction[]
+
+  @@map("cost_operations")
+}
+
+// PaymentMethod: CASH, BANK_TRANSFER, CARD, ONLINE
+
+model IncomeOperation {
+  id            String    @id @default(cuid())
+  orderId       String
+  clientId      String
+  
+  invoiceAmount Decimal   // РЎСѓРјРјР° Рє РѕРїР»Р°С‚Рµ
+  paidAmount    Decimal   @default(0) // РћРїР»Р°С‡РµРЅРѕ
+  
+  paymentMethod String? // CASH, BANK_TRANSFER, CARD, ONLINE
+  paymentDate   DateTime?
+  description   String?
+  createdAt     DateTime  @default(now())
+
+  order        Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  client       Client           @relation(fields: [clientId], references: [id])
+  transactions FinTransaction[]
+
+  @@map("income_operations")
+}
+
+// ==================== Р‘РЈРҐР“РђР›РўР•Р РЎРљРР™ РЈР§Р•Рў ====================
+// AccountType: ASSET, LIABILITY, REVENUE, EXPENSE, EQUITY
+
+model Account {
+  id          String   @id @default(cuid())
+  code        String   @unique // РљРѕРґ СЃС‡РµС‚Р°
+  name        String
+  type        String   // ASSET, LIABILITY, REVENUE, EXPENSE, EQUITY
+  balance     Decimal  @default(0)
+  currency    String   @default("RUB")
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  debitTransactions  FinTransaction[] @relation("DebitAccount")
+  creditTransactions FinTransaction[] @relation("CreditAccount")
+
+  @@map("accounts")
+}
+
+model FinTransaction {
+  id                String   @id @default(cuid())
+  debitAccountId    String
+  creditAccountId   String
+  amount            Decimal  
+  
+  costOperationId   String?
+  incomeOperationId String?
+  
+  description       String?
+  transactionDate   DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  debitAccount    Account          @relation("DebitAccount", fields: [debitAccountId], references: [id])
+  creditAccount   Account          @relation("CreditAccount", fields: [creditAccountId], references: [id])
+  costOperation   CostOperation?   @relation(fields: [costOperationId], references: [id])
+  incomeOperation IncomeOperation? @relation(fields: [incomeOperationId], references: [id])
+
+  @@map("fin_transactions")
+}
+
+// ==================== РЎРљР›РђР”РЎРљРћР™ РЈР§Р•Рў ====================
+// WarehouseType: MAIN, RETURNS, QUARANTINE
+// WarehouseStatus: ACTIVE, INACTIVE
+
+model Warehouse {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique // РљРѕСЂРѕС‚РєРёР№ РєРѕРґ СЃРєР»Р°РґР° (WH-01)
+  address     String?
+  type        String   @default("MAIN") // MAIN, RETURNS, QUARANTINE
+  status      String   @default("ACTIVE") // ACTIVE, INACTIVE
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  locations      StorageLocation[]
+  warehouseTasks WarehouseTask[]
+
+  @@map("warehouses")
+}
+
+// LocationType: SHELF, PALLET, BOX, FLOOR, RACK
+// LocationStatus: FREE, OCCUPIED, RESERVED, BLOCKED
+
+model StorageLocation {
+  id          String   @id @default(cuid())
+  warehouseId String
+  code        String   // A-01-02 (Р·РѕРЅР°-СЂСЏРґ-РїРѕР»РєР°)
+  name        String?
+  type        String   @default("SHELF") // SHELF, PALLET, BOX, FLOOR, RACK
+  status      String   @default("FREE") // FREE, OCCUPIED, RESERVED, BLOCKED
+  
+  // Р Р°Р·РјРµСЂС‹
+  length      Decimal? // РґР»РёРЅР° СЃРј
+  width       Decimal? // С€РёСЂРёРЅР° СЃРј
+  height      Decimal? // РІС‹СЃРѕС‚Р° СЃРј
+  maxVolume   Decimal? // РјР°РєСЃ РѕР±СЉРµРј РјВі
+  maxWeight   Decimal? // РјР°РєСЃ РІРµСЃ РєРі
+  
+  zone        String?  // Р—РѕРЅР° РЅР° СЃРєР»Р°РґРµ (A, B, C...)
+  row         Int?     // Р СЏРґ
+  level       Int?     // РЈСЂРѕРІРµРЅСЊ/РїРѕР»РєР°
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  productStocks ProductStock[]
+  movementsFrom StockMovement[] @relation("FromLocation")
+  movementsTo   StockMovement[] @relation("ToLocation")
+
+  @@unique([warehouseId, code])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("storage_locations")
+}
+
+// РўРѕРІР°СЂС‹ (СЃРїСЂР°РІРѕС‡РЅРёРє)
+model Product {
+  id           String   @id @default(cuid())
+  sku          String   @unique // РђСЂС‚РёРєСѓР»
+  barcode      String?  @unique // РЁС‚СЂРёС…РєРѕРґ
+  name         String
+  description  String?
+  category     String?
+  
+  // РҐР°СЂР°РєС‚РµСЂРёСЃС‚РёРєРё
+  unitWeight   Decimal  @default(0) // РІРµСЃ РµРґРёРЅРёС†С‹ РєРі
+  unitVolume   Decimal  @default(0) // РѕР±СЉРµРј РµРґРёРЅРёС†С‹ РјВі
+  unitCost     Decimal  @default(0) // СЃРµР±РµСЃС‚РѕРёРјРѕСЃС‚СЊ
+  unitPrice    Decimal  @default(0) // С†РµРЅР° РїСЂРѕРґР°Р¶Рё
+  
+  imageUrl     String?
+  minStock     Int      @default(0) // РјРёРЅРёРјР°Р»СЊРЅС‹Р№ РѕСЃС‚Р°С‚РѕРє
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  stocks         ProductStock[]
+  stockMovements StockMovement[]
+
+  @@index([sku])
+  @@index([barcode])
+  @@map("products")
+}
+
+// РћСЃС‚Р°С‚РєРё С‚РѕРІР°СЂРѕРІ (СЃРІСЏР·СЊ Product + Location)
+// StockStatus: AVAILABLE, RESERVED, BLOCKED, DEFECT
+
+model ProductStock {
+  id                String   @id @default(cuid())
+  productId         String
+  storageLocationId String
+  
+  quantity          Int      @default(0) // РљРѕР»РёС‡РµСЃС‚РІРѕ
+  reservedQty       Int      @default(0) // Р—Р°СЂРµР·РµСЂРІРёСЂРѕРІР°РЅРѕ
+  availableQty      Int      @default(0) // Р”РѕСЃС‚СѓРїРЅРѕ (quantity - reservedQty)
+  
+  status            String   @default("AVAILABLE") // AVAILABLE, RESERVED, BLOCKED, DEFECT
+  batchNumber       String?  // РќРѕРјРµСЂ РїР°СЂС‚РёРё
+  expiryDate        DateTime? // РЎСЂРѕРє РіРѕРґРЅРѕСЃС‚Рё
+  
+  lastMovementAt    DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  storageLocation StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, storageLocationId, batchNumber])
+  @@index([productId])
+  @@index([storageLocationId])
+  @@map("product_stocks")
+}
+
+// Р—Р°РґР°С‡Рё РїРѕ СЃРєР»Р°РґСѓ
+// TaskType: RECEIVING, PLACEMENT, PICKING, PACKING, SHIPPING, INVENTORY, TRANSFER
+// TaskStatus: NEW, IN_PROGRESS, COMPLETED, CANCELLED
+// TaskPriority: LOW, NORMAL, HIGH, URGENT
+
+model WarehouseTask {
+  id            String    @id @default(cuid())
+  taskNumber    String    @unique
+  warehouseId   String
+  orderId       String?   // РЎРІСЏР·СЊ СЃ Р·Р°РєР°Р·РѕРј (РµСЃР»Рё РїСЂРёРјРµРЅРёРјРѕ)
+  
+  type          String    // RECEIVING, PLACEMENT, PICKING, PACKING, SHIPPING, INVENTORY, TRANSFER
+  status        String    @default("NEW") // NEW, IN_PROGRESS, COMPLETED, CANCELLED
+  priority      String    @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  
+  assignedToId  String?   // ID СЃРѕС‚СЂСѓРґРЅРёРєР°
+  
+  // Р”Р°С‚С‹
+  plannedDate   DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id])
+  assignedTo     User?           @relation("AssignedUser", fields: [assignedToId], references: [id])
+  taskItems      TaskItem[]
+  stockMovements StockMovement[]
+
+  @@index([warehouseId])
+  @@index([orderId])
+  @@index([status])
+  @@index([type])
+  @@map("warehouse_tasks")
+}
+
+// РџРѕР·РёС†РёРё Р·Р°РґР°С‡Рё (С‡С‚Рѕ РЅСѓР¶РЅРѕ СЃРґРµР»Р°С‚СЊ)
+model TaskItem {
+  id              String  @id @default(cuid())
+  taskId          String
+  productId       String?
+  
+  expectedQty     Int     @default(0) // РћР¶РёРґР°РµРјРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ
+  actualQty       Int     @default(0) // Р¤Р°РєС‚РёС‡РµСЃРєРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ
+  
+  fromLocationId  String? // РћС‚РєСѓРґР° РІР·СЏС‚СЊ
+  toLocationId    String? // РљСѓРґР° РїРѕР»РѕР¶РёС‚СЊ
+  
+  isCompleted     Boolean @default(false)
+  notes           String?
+
+  task WarehouseTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("task_items")
+}
+
+// Р”РІРёР¶РµРЅРёСЏ С‚РѕРІР°СЂРѕРІ
+// MovementType: INBOUND, OUTBOUND, TRANSFER, ADJUSTMENT, WRITE_OFF
+
+model StockMovement {
+  id              String   @id @default(cuid())
+  productId       String
+  fromLocationId  String?  // null РґР»СЏ РїСЂРёС…РѕРґР°
+  toLocationId    String?  // null РґР»СЏ СЂР°СЃС…РѕРґР°
+  
+  quantity        Int
+  movementType    String   // INBOUND, OUTBOUND, TRANSFER, ADJUSTMENT, WRITE_OFF
+  
+  taskId          String?  // РЎРІСЏР·СЊ СЃ Р·Р°РґР°С‡РµР№
+  orderId         String?  // РЎРІСЏР·СЊ СЃ Р·Р°РєР°Р·РѕРј
+  
+  batchNumber     String?
+  reason          String?  // РџСЂРёС‡РёРЅР° (РґР»СЏ РєРѕСЂСЂРµРєС‚РёСЂРѕРІРѕРє)
+  
+  createdBy       String?  // РљС‚Рѕ СЃРѕР·РґР°Р»
+  createdAt       DateTime @default(now())
+
+  product      Product          @relation(fields: [productId], references: [id])
+  fromLocation StorageLocation? @relation("FromLocation", fields: [fromLocationId], references: [id])
+  toLocation   StorageLocation? @relation("ToLocation", fields: [toLocationId], references: [id])
+  task         WarehouseTask?   @relation(fields: [taskId], references: [id])
+
+  @@index([productId])
+  @@index([movementType])
+  @@index([createdAt])
+  @@map("stock_movements")
+}

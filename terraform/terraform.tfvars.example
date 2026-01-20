@@ -1,0 +1,44 @@
+# ==========================================
+# FulfillmentFinance CRM - Terraform Variables
+# ==========================================
+# 
+# Скопируйте этот файл в terraform.tfvars и заполните значения:
+# cp terraform.tfvars.example terraform.tfvars
+#
+# ==========================================
+
+# --- Аутентификация REG.RU Cloud ---
+# Получите данные в личном кабинете REG.RU Cloud:
+# https://cloud.reg.ru/
+#
+auth_url    = "https://api.cloudvps.reg.ru/v3"
+region      = "ru-msk"
+user_name   = "ваш_email@example.com"
+password    = "ваш_пароль_от_reg.ru_cloud"
+tenant_name = "ваш_tenant_id"  # Найдите в настройках проекта
+
+# --- Параметры сервера ---
+server_name   = "fulfillment-crm"
+flavor_name   = "Standard-2-4-50"  # 2 vCPU, 4 GB RAM, 50 GB SSD
+image_name    = "Ubuntu 22.04 LTS"
+network_name  = "external-network"
+key_pair_name = "crm-key"
+
+# SSH ключ (сгенерируйте: ssh-keygen -t ed25519 -C "crm-server")
+ssh_public_key = "ssh-ed25519 AAAA... your-email@example.com"
+
+# --- Параметры приложения ---
+# Оставьте пустым, если домена нет (будет использоваться IP)
+domain      = "crm.yourdomain.com"
+admin_email = "admin@yourdomain.com"
+
+# Пароль для PostgreSQL (используйте надёжный пароль!)
+db_password = "your_secure_database_password_here"
+
+# Секретный ключ для JWT (минимум 32 символа)
+jwt_secret = "your_super_secret_jwt_key_minimum_32_characters!"
+
+# --- Git репозиторий ---
+# URL вашего репозитория с кодом CRM
+git_repo_url = "https://github.com/Tem1rov/FFCRM.git"
+git_branch   = "main"
